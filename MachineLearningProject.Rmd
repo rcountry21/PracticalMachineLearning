@@ -1,0 +1,135 @@
+---
+title: "Machine Learning Project"
+author: "Ryan Countryman"
+date: "Saturday, March 12, 2016"
+output: 
+  html_document:
+    theme: default
+---
+
+##### Background 
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+###### Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har.
+
+The goal of this project is to predict the manner in which they did the exercise. This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing 
+
+* how you built your model
+* how you used cross validation, 
+* what you think the expected out of sample error is, and 
+* why you made the choices you did. 
+
+You will also use your prediction model to predict 20 different test cases.
+
+#### Load up R packages
+```{r}
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+
+```
+
+#### Loading and Cleaning Data
+First order of business is loading data from the URLs.
+```{r }
+# trainingRaw <- read.csv(file="pml-training.csv", na.strings=c("NA","#DIV/0!",""))
+# testingRaw <- read.csv(file="pml-testing.csv", na.strings=c("NA","#DIV/0!",""))
+trainingRaw <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"), na.strings=c("NA","#DIV/0!",""))
+testingRaw <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"), na.strings=c("NA","#DIV/0!",""))
+```
+
+
+After taking a quick look at the data it can be noted that the first 7 columns have information that will not be able to be used in the prediction model.  (Row number, username, dates, etc.)  So those columns will be removed.
+```{r}
+clean_trainingSet <- trainingRaw[-c(1:7)]
+```
+
+Next, we take a look at the information that has NA values.  In looking at the raw data it can be observed that there are several columns that consist mostly of empty values.  These columns are going to be remove so they don't impact the model.  The methodology for this will be to find the columns that have don't have NA values and use those for the model and testing.
+```{r}
+df_columns <- data.frame(Colname=character(),
+                 NAs=integer(),
+                 stringsAsFactors=FALSE)
+
+for(i in 1:length(clean_trainingSet)) 
+{ 
+  df_columns[i,1] = colnames(clean_trainingSet)[i]
+  df_columns[i,2] = sum( is.na( clean_trainingSet[, i] ))
+}
+
+head(df_columns)
+
+
+name_filter <- df_columns[ df_columns$NAs == 0, 1]
+clean_trainingSet <- clean_trainingSet[, name_filter]
+
+dim(clean_trainingSet)
+
+clean_testingSet <- testingRaw[-c(1:7)]
+
+# The testing set will not have the result "classe" so we remove that column
+name_filterTest <- name_filter[1:52]
+clean_testingSet <- clean_testingSet[, name_filterTest]
+
+dim(clean_testingSet)
+
+```
+Now we have a clean data set to use to model and create predictions.
+
+
+#### Cross validation
+Setting up training and testing subsets within our test data. Doing 70% Train, 30% Test
+To start with we'll do straight forward bootstrapping for our Cross Validation because it's
+easy to implement and takes less processing time/power.  
+
+```{r}
+set.seed(112233)
+trainingIndex <- createDataPartition(y=clean_trainingSet$classe, p=0.7, list=FALSE)
+trainingSubset <- clean_trainingSet[trainingIndex, ]; 
+testingSubset <- clean_trainingSet[-trainingIndex, ]
+
+```
+
+#### Classification tree
+The first try we will run the Classification Tree algorithm since we are trying to "Classify" our information into one of 5 groups.
+
+```{r}
+modelFit_Class <- rpart(classe ~ ., data=trainingSubset, method="class")
+predictions_Class <- predict(modelFit_Class, testingSubset, type = "class")
+confusionMatrix(predictions_Class, testingSubset$classe)
+
+```
+
+###### Result
+The accuracy of this model is 74.65%, thus the Out of Sample error for this model is 25.35% (1-0.7465).  So this means we predict we will be wrong 25.35% of the time with this model.  Let's try something else. 
+
+#### Random Forest
+For this model we are using the Random Forest model.  
+
+```{r}
+modelFit_Forest <- randomForest(classe ~. , data=trainingSubset) 
+predictions_Forest <- predict(modelFit_Forest, testingSubset, type = "class")
+confusionMatrix(predictions_Forest, testingSubset$classe)
+```
+The accuracy of this model is 99.63%, thus the Out of Sample error for this model is 0.37% (1-0.9963).  So this means we predict we will be wrong 0.37% of the time with this model.  Now that's what I call a model!
+
+
+#### Predictions on final test set
+For the final prediction on our actual test set, we will run the prediction using our Random Forest model.
+```{r}
+
+predict(modelFit_Forest, newdata=clean_testingSet)
+
+```
